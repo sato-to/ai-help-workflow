@@ -27,3 +27,6 @@ pids
 
 # Docker
 docker-compose.override.yml
+
+# Database Data
+db_data/
