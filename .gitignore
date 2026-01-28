@@ -30,3 +30,6 @@ docker-compose.override.yml
 
 # Database Data
 db_data/
+
+# for development
+sample/

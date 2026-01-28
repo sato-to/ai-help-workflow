@@ -11,4 +11,11 @@ openAIとチャットができるようにしたいです。
 
 ## ログの確認方法
 docker-compose logs -f app 
-    
+
+agent.jsのrunAgentを以下のように変更してください。
+
+sample/src/agent.pyのrun_agentと同じ動きになるようにする。
+ファイル構成や設計、関数名等はJavaScript・Reactのベストプラクティスに従ってください。
+
+
+

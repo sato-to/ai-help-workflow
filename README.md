@@ -1,56 +1,47 @@
-# AIワークフロースクリプト用Docker環境 (Node.js)
+# AI Chatbot Workflow (LangGraph.js + Elasticsearch)
 
-このディレクトリには、ElasticsearchとQdrantを使用してAIワークフロースクリプトをJavaScriptで実行するためのDocker化された環境が含まれています。
-また、ReactベースのチャットUIとLangGraphを使用したAIエージェントAPIも含まれています。
+このプロジェクトは、ElasticsearchとOpenAIをLangGraph.jsで連携させた、高度なプランニング型AIチャットボットです。
+ユーザーの複雑な質問をサブタスクに分解し、自己修復（リフレクション）を行いながら最適な回答を生成します。
+
+## 特徴
+- **Planning Agent**: 質問を解決するためのステップを自動生成。
+- **Self-Reflection**: 検索結果が不十分な場合、検索キーワードを変えてリトライ。
+- **Hybrid Search**: Elasticsearchによるキーワード検索と、Qdrantによるベクトル検索をツールとして使い分け。
+- **React UI**: 洗練されたチャットインターフェース。
+- **Dockerized**: 全ての環境（ES, Qdrant, Frontend, Backend）がコンテナで即座に起動可能。
 
 ## セットアップ
 
-1.  **環境変数の設定**:
-    `.env.example` を `.env` にコピーし（作成済み）、OpenAI APIの詳細を入力してください：
-    ```bash
-    OPENAI_API_KEY=your_key_here
-    OPENAI_API_BASE=https://api.openai.com/v1
-    OPENAI_MODEL=gpt-4o-mini
-    ```
+### 1. 環境変数の設定
+`.env` ファイルを作成し、OpenAIのAPIキーを設定してください。
 
-2.  **サービスの起動**:
-    すべてのサービス（Frontend, Backend, DBs）を起動します：
-    ```bash
-    docker-compose up -d --build
-    ```
+```env
+OPENAI_API_KEY=your_api_key_here
+OPENAI_API_BASE=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+ELASTICSEARCH_URL=http://elasticsearch:9200
+QDRANT_URL=http://qdrant:6333
+```
 
-## チャットUIの利用
+### 2. 起動
+```bash
+docker-compose up -d --build
+```
 
-ブラウザで以下のURLにアクセスしてください：
-**http://localhost:5173**
-
-- ユーザーが質問を入力すると、AIエージェントがElasticsearchから関連情報を検索し、OpenAIを使用して回答を生成します。
-
-## スクリプトの実行
-
-`docker-compose run` を使用してスクリプトを実行できます。
-
-**インデックスの作成・データ更新**:
+### 3. 初期データの投入
+PDFおよびCSVデータをインデックスします（`data/` ディレクトリにファイルを配置してください）。
 ```bash
 docker-compose run --rm app node scripts/create_index.js
 ```
-※ PDFデータとCSV(QA)データの両方がElasticsearchとQdrantに登録されます。
 
-**データの確認**:
+## 使い方
+- **チャットUI**: http://localhost:5173
+- **デバッグ**: `docker-compose run --rm app node scripts/debug_agent.js "質問"`
+- **ES管理 (Elasticvue)**: http://localhost:8080
+
+## 開発・デバッグ
+エージェントの詳細な動作仕様は [AGENTS.md](AGENTS.md) を参照してください。
+ログのリアルタイム確認は以下のコマンドで行えます。
 ```bash
-docker-compose run --rm app node scripts/check_data.js
+docker-compose logs -f app
 ```
-
-## ブラウザでのデータ確認
-
-- **Qdrant (ベクトル検索)**: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
-- **Elasticsearch (ElasticVue)**: [http://localhost:8080](http://localhost:8080)
-    - 接続先: `http://localhost:9200`
-
-## ディレクトリ構成
-
--   `frontend/`: React + Vite チャットアプリケーション
--   `server.js`: バックエンドAPIサーバー (Express)
--   `src/agent.js`: LangGraph.js AIエージェントロジック
--   `scripts/`: データ登録・確認用スクリプト
--   `docker-compose.yml`: 全サービスの構成定義

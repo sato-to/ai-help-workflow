@@ -1,97 +1,184 @@
 const { StateGraph, END } = require("@langchain/langgraph");
 const { ChatOpenAI } = require("@langchain/openai");
-const { Client } = require("@elastic/elasticsearch");
+const { z } = require("zod");
+const { 
+    SystemMessage, 
+    HumanMessage, 
+} = require("@langchain/core/messages");
 require("dotenv").config();
 
-// Elasticsearch Client
-const esUrl = process.env.ELASTICSEARCH_URL || "http://localhost:9200";
-const esClient = new Client({ node: esUrl });
+const { createSubtaskExecutor } = require("./subgraph");
+const { 
+    PLANNER_SYSTEM_PROMPT, 
+    PLANNER_USER_PROMPT,
+    CREATE_LAST_ANSWER_SYSTEM_PROMPT,
+    CREATE_LAST_ANSWER_USER_PROMPT
+} = require("./prompts");
 
-// OpenAI Model
-const model = new ChatOpenAI({
-  modelName: process.env.OPENAI_MODEL || "gpt-4o-mini",
-  temperature: 0,
+// --- Schemas ---
+
+const PlanSchema = z.object({
+  subtasks: z.array(z.string()).describe("問題を解決するためのサブタスクリスト"),
 });
 
-// Define State
-// { messages: [], context: "" }
+// --- State Definition ---
 
-async function retrieve(state) {
-  const query = state.messages[state.messages.length - 1];
-  console.log(`Searching ES for: ${query}`);
-
-  try {
-    const result = await esClient.search({
-      index: "documents",
-      size: 3,
-      body: {
-        query: {
-          match: {
-            content: query,
-          },
-        },
-      },
-    });
-
-    const context = result.hits.hits.map((hit) => hit._source.content).join("\n\n");
-    console.log(`Retrieved context length: ${context.length}`);
-    return { context };
-  } catch (error) {
-    console.error("Error asking Elasticsearch:", error);
-    return { context: "" };
-  }
-}
-
-async function generate(state) {
-  const query = state.messages[state.messages.length - 1];
-  const context = state.context;
-
-  const prompt = `
-あなたはシステムのヘルプデスク担当者です。
-以下のコンテキスト情報（Elasticsearchの検索結果）を参考にして、ユーザーの質問に回答してください。
-もしコンテキストに答えが見つからない場合は、「申し訳ありませんが、提供された情報からは回答が見つかりませんでした」と答えてください。
-
-コンテキスト:
-${context}
-
-ユーザーの質問:
-${query}
-`;
-
-  const response = await model.invoke(prompt);
-  return { answer: response.content };
-}
-
-// Build Graph
-const workflow = new StateGraph({
-  channels: {
-    messages: {
-      reducer: (a, b) => a.concat(b),
-      default: () => [],
-    },
-    context: {
-      reducer: (a, b) => b,
-      default: () => "",
-    },
-    answer: {
+const agentStateChannels = {
+    question: {
         reducer: (a, b) => b,
-        default: () => ""
+        default: () => null
+    },
+    plan: {
+        reducer: (a, b) => b,
+        default: () => []
+    },
+    current_step: {
+        reducer: (a, b) => b,
+        default: () => 0
+    },
+    subtask_results: { 
+        reducer: (a, b) => a.concat(b),
+        default: () => []
+    },
+    last_answer: {
+        reducer: (a, b) => b,
+        default: () => null
+    },
+};
+
+// --- Main Agent Implementation ---
+
+class HelpDeskAgent {
+    constructor() {
+        this.model = new ChatOpenAI({
+            modelName: process.env.OPENAI_MODEL || "gpt-4o-mini",
+            temperature: 0,
+        });
     }
-  },
-});
 
-workflow.addNode("retriever", retrieve);
-workflow.addNode("generator", generate);
+    async createPlan(state) {
+        console.log("🚀 Starting plan generation process...");
+        
+        const systemPrompt = PLANNER_SYSTEM_PROMPT;
+        const userPrompt = PLANNER_USER_PROMPT.replace("{question}", state.question);
+        
+        const structuredModel = this.model.withStructuredOutput(PlanSchema);
+        
+        try {
+            const plan = await structuredModel.invoke([
+                new SystemMessage(systemPrompt),
+                new HumanMessage(userPrompt)
+            ]);
+            
+            console.log("✅ Plan generation complete:", plan.subtasks);
+            return { plan: plan.subtasks };
+        } catch (error) {
+            console.error("Error creating plan:", error);
+            throw error;
+        }
+    }
 
-workflow.setEntryPoint("retriever");
-workflow.addEdge("retriever", "generator");
-workflow.addEdge("generator", END);
+    async createAnswer(state) {
+        console.log("🚀 Starting final answer creation process...");
+        
+        const subtaskResults = state.subtask_results.map(r => ({
+            task_name: r.task_name,
+            subtask_answer: r.subtask_answer
+        }));
 
-const app = workflow.compile();
+        const userPrompt = CREATE_LAST_ANSWER_USER_PROMPT
+            .replace("{question}", state.question)
+            .replace("{subtask_results}", JSON.stringify(subtaskResults, null, 2));
+
+        try {
+            const response = await this.model.invoke([
+                new SystemMessage(CREATE_LAST_ANSWER_SYSTEM_PROMPT),
+                new HumanMessage(userPrompt)
+            ]);
+            
+            console.log("✅ Final answer creation complete.");
+            return { last_answer: response.content };
+        } catch (error) {
+             console.error("Error creating final answer:", error);
+             throw error;
+        }
+    }
+
+    createGraph() {
+        const workflow = new StateGraph({ channels: agentStateChannels });
+        const subgraph = createSubtaskExecutor();
+
+        workflow.addNode("create_plan", this.createPlan.bind(this));
+        
+        const executeSubtasks = async (state) => {
+            const currentSubtask = state.plan[state.current_step];
+            console.log(`\n=== Executing Subtask ${state.current_step + 1}: ${currentSubtask} ===\n`);
+            
+            const result = await subgraph.invoke({
+                question: state.question,
+                plan: state.plan,
+                subtask: currentSubtask,
+                challenge_count: 0,
+                is_completed: false,
+                messages: []
+            });
+
+            return {
+                subtask_results: [{
+                    task_name: result.subtask,
+                    tool_results: result.tool_results,
+                    reflection_results: result.reflection_results,
+                    is_completed: result.is_completed,
+                    subtask_answer: result.subtask_answer,
+                    challenge_count: result.challenge_count
+                }],
+                current_step: state.current_step + 1
+            };
+        };
+
+        workflow.addNode("execute_subtasks", executeSubtasks);
+        workflow.addNode("create_answer", this.createAnswer.bind(this));
+
+        workflow.setEntryPoint("create_plan");
+        
+        workflow.addEdge("create_plan", "execute_subtasks");
+        
+        workflow.addConditionalEdges(
+            "execute_subtasks",
+            (state) => {
+                if (state.current_step < state.plan.length) {
+                    return "execute_subtasks";
+                }
+                return "create_answer";
+            }
+        );
+
+        workflow.addEdge("create_answer", END);
+
+        return workflow.compile();
+    }
+}
+
+// --- Export ---
+
+const agent = new HelpDeskAgent();
+const app = agent.createGraph();
 
 async function runAgent(message) {
-  const result = await app.invoke({ messages: [message] });
-  return result.answer;
+    console.log(`\n\n[Agent] Starting processing for: ${message}\n`);
+    try {
+        const result = await app.invoke({ 
+            question: message,
+            plan: [],
+            current_step: 0,
+            subtask_results: [],
+            last_answer: ""
+        });
+        return result.last_answer;
+    } catch (error) {
+        console.error("Agent execution failed:", error);
+        return "申し訳ありません。エラーが発生しました。";
+    }
 }
 
 module.exports = { runAgent };

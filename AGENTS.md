@@ -6,53 +6,45 @@
 - **目的**: システムヘルプデスクAIの実装。
 - **機能**:
   - チャット形式のUI (React)
-  - AIエージェントによる回答 (LangGraph.js + OpenAI)
+  - 高度なプランニング型AIエージェント (LangGraph.js + OpenAI)
   - Elasticsearchによるナレッジベース検索 (PDFマニュアル + CSV QA)
 
-## 2. 技術スタック
+## 2. アーキテクチャ構成
+本プロジェクトは、単純なRAG (Retrieval-Augmented Generation) ではなく、ユーザーの質問を複数のサブタスクに分解して実行し、その結果を統合して回答する「プランニングエージェント」構成を採用しています。
+
+### エージェントのフロー
+1.  **Planner**: ユーザーの質問を分析し、解決に必要なサブタスクリスト（実行計画）を作成します。
+2.  **Executor (Subgraph)**: 各サブタスクに対して以下を繰り返します（最大3回までリトライ）。
+    - **Tool Selection**: 適切な検索ツール（ElasticsearchまたはQdrant）を選択。
+    - **Tool Execution**: 検索の実行。
+    - **Summarization**: 検索結果からサブタスクの回答を作成。
+    - **Reflection**: 回答が十分か評価。不十分な場合はアドバイスを生成してリトライ。
+3.  **Final Generator**: 全てのサブタスク結果を統合し、ユーザーへの最終回答を作成します。
+
+## 3. 技術スタック
 - **フロントエンド**: React (Vite)
 - **バックエンド**: Node.js (Express), LangGraph.js
 - **データベース**:
-  - **Elasticsearch (v8.11.1)**:
-    - ポート: 9200
-    - カスタムイメージ: `analysis-kuromoji`, `analysis-icu` プラグイン導入済み
-    - 用途: 全文検索 (PDF, CSV)
-  - **Qdrant**:
-    - ポート: 6333
-    - 用途: ベクトル検索 (現在はQAデータのみ格納だが、エージェントは主にESを使用)
-- **環境**: Docker Desktop (Docker Compose)
+  - **Elasticsearch (v8.11.1)**: キーワード検索 (`search_xyz_manual`)
+  - **Qdrant**: ベクトル検索 (`search_xyz_qa`)
+- **LLM**: OpenAI GPT-4o-mini (Structured Outputを利用)
 
-## 3. ディレクトリ構成
+## 4. ディレクトリ構成
 ```
 .
-├── frontend/           # [NEW] ReactチャットアプリケーションとDockerfile
-├── server.js           # [NEW] バックエンドAPIサーバー
-├── src/agent.js        # [NEW] LangGraphエージェントロジック
-├── docker-compose.yml  # コンテナ構成定義 (App, Frontend, ES, Qdrant, ElasticVue)
-├── package.json        # バックエンド依存ライブラリ定義
-├── elasticsearch/      # Elasticsearch拡張用ディレクトリ
-├── db_data/            # [Git管理外] 永続化データ
-├── data/               # [Git管理外] 入力データ (PDF, CSV)
-├── scripts/            # 実行スクリプト
-│   ├── create_index.js # インデックス作成＆データ投入 (ESにQAデータも追加)
-│   ├── check_data.js   # データ登録確認
-│   ├── delete_index.js # インデックス削除
-│   └── debug_agent.js  # [NEW] エージェントデバッグ用スクリプト
+├── frontend/           # Reactチャットアプリケーション
+├── server.js           # バックエンドAPIサーバー
+├── src/
+│   ├── agent.js        # メインのエージェントロジック (LangGraph定義)
+│   ├── prompts.js      # 各フェーズのプロンプト定義
+│   └── tools.js        # 検索ツールの実装 (ES/Qdrant)
+├── docker-compose.yml  # コンテナ定義
+├── package.json        # 依存ライブラリ
+├── scripts/
+│   ├── create_index.js # インデックス作成＆データ投入
+│   └── debug_agent.js  # エージェント単体デバッグ用スクリプト
 └── AGENTS.md           # 本ファイル
 ```
-
-## 4. 環境構成詳細
-
-### Docker構成
-- **app**: バックエンドサーバー＆スクリプト実行用。Port 3000。
-- **frontend**: チャットUI。Port 5173。
-- **elasticsearch**: 検索エンジン。
-- **qdrant**: ベクトルDB。
-- **elasticvue**: ES確認用GUI。Port 8080。
-
-### ネットワーク・データ
-- 全コンテナは `default` ネットワークで通信。
-- データは `db_data/` に永続化。
 
 ## 5. 開発ワークフロー
 
@@ -61,23 +53,19 @@
 docker-compose up -d --build
 ```
 
-### チャット利用
-ブラウザで **http://localhost:5173** にアクセス。
-
 ### データのインデックス作成
 ```bash
 docker-compose run --rm app node scripts/create_index.js
 ```
-※ PDFとCSVの両方がElasticsearchの `documents` インデックスに登録されます。
 
 ### エージェントのデバッグ
-以下の方法でエージェントのロジックのみを単体実行・デバッグできます。
+エージェントの思考プロセスをCLIで詳細に確認できます。
 ```bash
-docker-compose run --rm app node scripts/debug_agent.js "ログインできない"
+docker-compose run --rm app node scripts/debug_agent.js "システムが遅い時の対処法は？"
 ```
-ログは `src/agent.js` 内の `console.log` で出力されます。
 
-### エージェントのロジック (`src/agent.js`)
-1. ユーザーの質問を受け取る。
-2. Elasticsearchを検索し、関連テキストを取得。
-3. OpenAI (GPT-4) にコンテキストと質問を渡し、回答を生成。
+### ログの監視
+リアルタイムでエージェントのログ（思考過程や検索実行）を確認できます。
+```bash
+docker-compose logs -f app
+```
