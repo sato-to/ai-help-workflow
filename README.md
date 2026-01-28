@@ -1,7 +1,8 @@
 # AI Chatbot Workflow (LangGraph.js + Elasticsearch)
+AI型チャットボットの実装を試すサンプルプロジェクト。  
 
-このプロジェクトは、ElasticsearchとOpenAIをLangGraph.jsで連携させた、高度なプランニング型AIチャットボットです。
-ユーザーの複雑な質問をサブタスクに分解し、自己修復（リフレクション）を行いながら最適な回答を生成します。
+- ElasticsearchとOpenAIをLangGraph.jsで連携。  
+- 質問をサブタスクに分解し、自己修復（リフレクション）を行いながら最適な回答を生成します。
 
 ## 特徴
 - **Planning Agent**: 質問を解決するためのステップを自動生成。
