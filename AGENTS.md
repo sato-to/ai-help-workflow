@@ -3,88 +3,73 @@
 このファイルは、AIエージェントが本プロジェクトの構造、仕様、開発環境を迅速に理解し、開発をスムーズに進めるためのコンテキスト情報を提供します。
 
 ## 1. プロジェクト概要
-- **目的**: PDFドキュメントとQAデータを検索可能にするAIワークフローの基盤構築。
+- **目的**: システムヘルプデスクAIの実装。
 - **機能**:
-  - キーワード検索 (Elasticsearch)
-  - ベクトル検索 (Qdrant)
-  - ハイブリッド検索の基盤 (スクリプトで両方のインデックスを作成)
+  - チャット形式のUI (React)
+  - AIエージェントによる回答 (LangGraph.js + OpenAI)
+  - Elasticsearchによるナレッジベース検索 (PDFマニュアル + CSV QA)
 
 ## 2. 技術スタック
-- **言語**: JavaScript (Node.js v20)
-- **環境**: Docker Desktop (Docker Compose)
+- **フロントエンド**: React (Vite)
+- **バックエンド**: Node.js (Express), LangGraph.js
 - **データベース**:
   - **Elasticsearch (v8.11.1)**:
     - ポート: 9200
-    - カスタムイメージ: `elasticsearch/Dockerfile` (プラグイン: `analysis-kuromoji`, `analysis-icu`)
-    - 用途: PDFマニュアルの全文検索 (日本語対応)
+    - カスタムイメージ: `analysis-kuromoji`, `analysis-icu` プラグイン導入済み
+    - 用途: 全文検索 (PDF, CSV)
   - **Qdrant**:
     - ポート: 6333
-    - 用途: QAデータのベクトル検索 (OpenAI Embeddings)
-- **ライブラリ**:
-  - `langchain`: ドキュメントローダー (PDF, CSV)、スプリッター
-  - `@elastic/elasticsearch`: ESクライアント
-  - `@qdrant/js-client-rest`: Qdrantクライアント
-  - `openai`: Embeddings生成
+    - 用途: ベクトル検索 (現在はQAデータのみ格納だが、エージェントは主にESを使用)
+- **環境**: Docker Desktop (Docker Compose)
 
 ## 3. ディレクトリ構成
 ```
 .
-├── .env                # 環境変数 (APIキー等)
-├── .env.example        # 環境変数テンプレート
-├── .gitignore          # Git除外設定 (node_modules, db_data, .env等)
-├── README.md           # ユーザー向け利用ガイド
-├── AGENTS.md           # AIエージェント/開発者向け仕様書 (本ファイル)
-├── Dockerfile          # アプリケーション(Node.js)実行環境
-├── docker-compose.yml  # コンテナ構成定義 (App, ES, Qdrant, ElasticVue)
-├── package.json        # 依存ライブラリ定義
+├── frontend/           # [NEW] ReactチャットアプリケーションとDockerfile
+├── server.js           # [NEW] バックエンドAPIサーバー
+├── src/agent.js        # [NEW] LangGraphエージェントロジック
+├── docker-compose.yml  # コンテナ構成定義 (App, Frontend, ES, Qdrant, ElasticVue)
+├── package.json        # バックエンド依存ライブラリ定義
 ├── elasticsearch/      # Elasticsearch拡張用ディレクトリ
-│   └── Dockerfile      # 日本語プラグイン入りカスタムイメージ定義
-├── db_data/            # [Git管理外] 永続化データ (Elasticsearch, Qdrant)
+├── db_data/            # [Git管理外] 永続化データ
 ├── data/               # [Git管理外] 入力データ (PDF, CSV)
-└── scripts/            # 実行スクリプト
-    ├── create_index.js # インデックス作成＆データ投入
-    ├── check_data.js   # データ登録確認
-    └── delete_index.js # インデックス削除
+├── scripts/            # 実行スクリプト
+│   ├── create_index.js # インデックス作成＆データ投入 (ESにQAデータも追加)
+│   ├── check_data.js   # データ登録確認
+│   └── delete_index.js # インデックス削除
+└── AGENTS.md           # 本ファイル
 ```
 
 ## 4. 環境構成詳細
 
 ### Docker構成
-- **app**: Node.js実行用コンテナ。`scripts/`を実行する。
-- **elasticsearch**: カスタムビルド。CORS許可済み (ElasticVue用)。
+- **app**: バックエンドサーバー＆スクリプト実行用。Port 3000。
+- **frontend**: チャットUI。Port 5173。
+- **elasticsearch**: 検索エンジン。
 - **qdrant**: ベクトルDB。
-- **elasticvue**: ES確認用GUI (ポート8080)。
+- **elasticvue**: ES確認用GUI。Port 8080。
 
-### データ永続化
-- プロジェクトルートの `db_data/` ディレクトリにバインドマウント。
-- `docker-compose down` してもデータは保持される。
-- `git clean -fdx` などで削除可能。
-
-### ネットワーク
-- 全コンテナは `default` ネットワークで相互通信。
-- スクリプト実行時は `docker-compose run --rm app ...` を使用することで、ネットワーク内でホスト名 (`elasticsearch`, `qdrant`) による解決が可能。
-- スクリプト内の接続設定は `ELASTICSEARCH_URL`, `QDRANT_URL` 環境変数で制御 (デフォルトは localhost だが、Docker内からはサービス名で解決)。
+### ネットワーク・データ
+- 全コンテナは `default` ネットワークで通信。
+- データは `db_data/` に永続化。
 
 ## 5. 開発ワークフロー
 
-### コンテナの起動・ビルド
-Elasticsearchの構成変更（Dockerfile変更）時はビルドが必要。
+### 起動
 ```bash
 docker-compose up -d --build
 ```
 
-### スクリプトの実行
-ホスト側でNode.jsを実行するのではなく、**必ずDockerコンテナ経由で実行**する（ネットワーク接続のため）。
+### チャット利用
+ブラウザで **http://localhost:5173** にアクセス。
+
+### データのインデックス作成
 ```bash
 docker-compose run --rm app node scripts/create_index.js
 ```
+※ PDFとCSVの両方がElasticsearchの `documents` インデックスに登録されます。
 
-### データの確認
-- **Qdrant**: http://localhost:6333/dashboard
-- **Elasticsearch**: http://localhost:8080 (ElasticVue)
-- **スクリプト**: `docker-compose run --rm app node scripts/check_data.js`
-
-## 6. 現在の課題・注意点
-- **OpenAI API**: ベクトル生成に必要。`.env` にキー設定が必須。
-- **メモリ**: ElasticsearchとQdrantを同時起動するため、Dockerへの割り当てメモリに注意。
-- **インデックス設定**: 現在は固定の `documents` インデックスを使用。
+### エージェントのロジック (`src/agent.js`)
+1. ユーザーの質問を受け取る。
+2. Elasticsearchを検索し、関連テキストを取得。
+3. OpenAI (GPT-4) にコンテキストと質問を渡し、回答を生成。

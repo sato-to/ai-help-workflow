@@ -190,6 +190,7 @@ async function main() {
 
     console.log("Adding documents to keyword search index");
     await addDocumentsToEs(es, indexName, manualDocs);
+    await addDocumentsToEs(es, indexName, qaDocs);
     console.log("--------------------------------");
 
     console.log("Adding documents to vector search index");

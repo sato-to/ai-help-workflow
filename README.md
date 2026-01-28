@@ -1,6 +1,7 @@
 # AIワークフロースクリプト用Docker環境 (Node.js)
 
 このディレクトリには、ElasticsearchとQdrantを使用してAIワークフロースクリプトをJavaScriptで実行するためのDocker化された環境が含まれています。
+また、ReactベースのチャットUIとLangGraphを使用したAIエージェントAPIも含まれています。
 
 ## セットアップ
 
@@ -13,56 +14,43 @@
     ```
 
 2.  **サービスの起動**:
-    ElasticsearchとQdrantをバックグラウンドで起動します：
+    すべてのサービス（Frontend, Backend, DBs）を起動します：
     ```bash
-    docker-compose up -d elasticsearch qdrant
+    docker-compose up -d --build
     ```
+
+## チャットUIの利用
+
+ブラウザで以下のURLにアクセスしてください：
+**http://localhost:5173**
+
+- ユーザーが質問を入力すると、AIエージェントがElasticsearchから関連情報を検索し、OpenAIを使用して回答を生成します。
 
 ## スクリプトの実行
 
-`docker-compose run` を使用してスクリプトを実行できます。これにより、スクリプトはDockerネットワーク内で実行され、データベースにアクセスできるようになります。
+`docker-compose run` を使用してスクリプトを実行できます。
 
-**インデックスの作成**:
+**インデックスの作成・データ更新**:
 ```bash
 docker-compose run --rm app node scripts/create_index.js
-# または npm script 経由で実行
-docker-compose run --rm app npm start
 ```
+※ PDFデータとCSV(QA)データの両方がElasticsearchとQdrantに登録されます。
 
 **データの確認**:
-作成されたインデックスやデータの中身を確認します。
 ```bash
 docker-compose run --rm app node scripts/check_data.js
 ```
 
-**インデックスの削除**:
-```bash
-docker-compose run --rm app node scripts/delete_index.js
-```
-
 ## ブラウザでのデータ確認
 
-**1. Qdrant (ベクトル検索エンジン)**
-Qdrantには標準でダッシュボードが組み込まれています。
-- URL: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
-- 機能: コレクションの確認、検索クエリの実行が可能です。
-
-**2. Elasticsearch (キーワード検索エンジン)**
-データの確認用に **ElasticVue** というGUIツールを追加しました。
-- URL: [http://localhost:8080](http://localhost:8080)
-- 使い方:
-    1. 上記URLにアクセス
-    2. 接続画面が出る場合、「Add cluster」で `http://localhost:9200` を指定（Docker内ではなくブラウザからアクセスするため localhost でOK）
-    3. 左メニューの「Indices」から `documents` インデックスを選択し、「Search」タブでデータを確認できます。
-
-## コマンドラインでの確認（代替手段）
+- **Qdrant (ベクトル検索)**: [http://localhost:6333/dashboard](http://localhost:6333/dashboard)
+- **Elasticsearch (ElasticVue)**: [http://localhost:8080](http://localhost:8080)
+    - 接続先: `http://localhost:9200`
 
 ## ディレクトリ構成
 
--   `Dockerfile`: Node.js環境定義
--   `docker-compose.yml`: Node.jsアプリ、Elasticsearch、Qdrantのオーケストレーション設定
--   `package.json`: JavaScriptライブラリの依存関係定義
--   `scripts/`: JavaScriptスクリプト
-    -   `create_index.js`: インデックス作成とデータ投入
-    -   `delete_index.js`: インデックス削除
-    -   `check_data.js`: データ確認用
+-   `frontend/`: React + Vite チャットアプリケーション
+-   `server.js`: バックエンドAPIサーバー (Express)
+-   `src/agent.js`: LangGraph.js AIエージェントロジック
+-   `scripts/`: データ登録・確認用スクリプト
+-   `docker-compose.yml`: 全サービスの構成定義

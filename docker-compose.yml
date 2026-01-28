@@ -10,9 +10,22 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     env_file:
       - .env
+    ports:
+      - "3000:3000"
+    command: node server.js
     depends_on:
       - elasticsearch
       - qdrant
+
+  frontend:
+    build: ./frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
 
   elasticsearch:
     build: ./elasticsearch
