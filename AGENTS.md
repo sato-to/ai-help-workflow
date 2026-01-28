@@ -36,7 +36,8 @@
 ├── scripts/            # 実行スクリプト
 │   ├── create_index.js # インデックス作成＆データ投入 (ESにQAデータも追加)
 │   ├── check_data.js   # データ登録確認
-│   └── delete_index.js # インデックス削除
+│   ├── delete_index.js # インデックス削除
+│   └── debug_agent.js  # [NEW] エージェントデバッグ用スクリプト
 └── AGENTS.md           # 本ファイル
 ```
 
@@ -68,6 +69,13 @@ docker-compose up -d --build
 docker-compose run --rm app node scripts/create_index.js
 ```
 ※ PDFとCSVの両方がElasticsearchの `documents` インデックスに登録されます。
+
+### エージェントのデバッグ
+以下の方法でエージェントのロジックのみを単体実行・デバッグできます。
+```bash
+docker-compose run --rm app node scripts/debug_agent.js "ログインできない"
+```
+ログは `src/agent.js` 内の `console.log` で出力されます。
 
 ### エージェントのロジック (`src/agent.js`)
 1. ユーザーの質問を受け取る。
