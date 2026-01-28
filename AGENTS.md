@@ -33,7 +33,7 @@
 ├── .env.example        # 環境変数テンプレート
 ├── .gitignore          # Git除外設定 (node_modules, db_data, .env等)
 ├── README.md           # ユーザー向け利用ガイド
-├── AI_CONTEXT.md       # AIエージェント/開発者向け仕様書 (本ファイル)
+├── AGENTS.md           # AIエージェント/開発者向け仕様書 (本ファイル)
 ├── Dockerfile          # アプリケーション(Node.js)実行環境
 ├── docker-compose.yml  # コンテナ構成定義 (App, ES, Qdrant, ElasticVue)
 ├── package.json        # 依存ライブラリ定義
